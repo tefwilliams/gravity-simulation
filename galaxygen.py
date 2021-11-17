@@ -1,4 +1,5 @@
-from numba import njit, prange
+from numba import njit, prange, jit
+from numba.core.decorators import jit
 import numpy as np
 
 
@@ -8,7 +9,7 @@ def create_galaxy(n, size, G):
     '''
     # Generates random masses
     # masses = abs(np.random.normal(0.5, 0.05, n))
-    masses = np.ones(n)
+    masses = np.ones(n, dtype=np.float32)
 
     # Sets positions for points
     positions = create_positions(n, size)
@@ -20,7 +21,7 @@ def create_galaxy(n, size, G):
 
     # Finds the initial velocity of each point
     velocities = create_velocities(
-        n, relative_internal_positions, internal_masses, G)
+        relative_internal_positions, internal_masses, G)
 
     return velocities, positions
 
@@ -39,7 +40,7 @@ def create_positions(n, size):
     points_x = points_r * np.cos(points_p)
     points_y = points_r * np.sin(points_p)
 
-    points = np.zeros((n, 3))
+    points = np.empty((n, 3), dtype=np.float64)
 
     # Adds 'noise' to all 3D to generate points
     points[:, 0] = np.random.normal(0, galaxy_spread, n) + points_x
@@ -49,7 +50,7 @@ def create_positions(n, size):
     return points
 
 
-def create_velocities(n, relative_internal_positions, internal_masses, G):
+def create_velocities(relative_internal_positions, internal_masses, G):
     '''
     Creates point velocities
     '''
@@ -59,9 +60,9 @@ def create_velocities(n, relative_internal_positions, internal_masses, G):
 
     # Calculates unit vectors in 3D
     radial_vectors = relative_internal_positions[:, 0:2]
-    vertical_vectors = np.random.normal(0, 0.1, n)
+    vertical_vectors = np.random.normal(0, 0.1, len(relative_distances))
 
-    vectors = np.zeros((n, 3))
+    vectors = np.zeros((len(relative_distances), 3), dtype=np.float64)
     vectors[:, 0] = - radial_vectors[:, 1]
     vectors[:, 1] = radial_vectors[:, 0]
     vectors[:, 2] = vertical_vectors
@@ -73,6 +74,7 @@ def create_velocities(n, relative_internal_positions, internal_masses, G):
     return speeds[:, None] * vectors / normalisation[:, None]
 
 
+@jit
 def get_internal_masses(masses, positions):
     n = len(masses)
 
@@ -112,6 +114,7 @@ def get_internal_masses(masses, positions):
 
 #     return com_mass, (com_position_x, com_position_y, com_position_z)
 
+@jit
 def get_center_of_mass(masses, positions):
     com_mass = np.sum(masses)
     com_position = np.zeros(3)
