@@ -1,5 +1,4 @@
-from numba import njit, prange, jit
-from numba.core.decorators import jit
+from numba import cuda
 import numpy as np
 
 
@@ -40,7 +39,7 @@ def create_positions(n, size):
     points_x = points_r * np.cos(points_p)
     points_y = points_r * np.sin(points_p)
 
-    points = np.empty((n, 3), dtype=np.float64)
+    points = np.empty((n, 3), dtype=np.float32)
 
     # Adds 'noise' to all 3D to generate points
     points[:, 0] = np.random.normal(0, galaxy_spread, n) + points_x
@@ -62,7 +61,7 @@ def create_velocities(relative_internal_positions, internal_masses, G):
     radial_vectors = relative_internal_positions[:, 0:2]
     vertical_vectors = np.random.normal(0, 0.1, len(relative_distances))
 
-    vectors = np.zeros((len(relative_distances), 3), dtype=np.float64)
+    vectors = np.zeros_like(relative_internal_positions)
     vectors[:, 0] = - radial_vectors[:, 1]
     vectors[:, 1] = radial_vectors[:, 0]
     vectors[:, 2] = vertical_vectors
@@ -74,52 +73,36 @@ def create_velocities(relative_internal_positions, internal_masses, G):
     return speeds[:, None] * vectors / normalisation[:, None]
 
 
-@jit
 def get_internal_masses(masses, positions):
-    n = len(masses)
-
-    internal_center_of_mass_positions = np.empty((n, 3))
-    internal_center_of_mass_masses = np.empty((n))
+    internal_center_of_mass_positions = np.zeros_like(positions)
+    internal_center_of_mass_masses = np.zeros_like(masses)
 
     # Finds the radial distance for each point from the centre of the galaxy
     distances_from_zero = np.linalg.norm(positions, axis=1)
 
-    for i in range(n):
-        positions_internal_to_particle = positions[distances_from_zero <
-                                                   distances_from_zero[i]]
-        masses_internal_to_particle = masses[distances_from_zero <
-                                             distances_from_zero[i]]
+    threads_per_block = 32
+    blocks_per_grid = (len(masses) + (threads_per_block - 1)) // threads_per_block
 
-        internal_center_of_mass_masses[i], internal_center_of_mass_positions[i] = get_center_of_mass(
-            masses_internal_to_particle, positions_internal_to_particle)
+    cuda_get_internal_masses[blocks_per_grid, threads_per_block](masses, positions, internal_center_of_mass_masses, internal_center_of_mass_positions, distances_from_zero)
 
     return internal_center_of_mass_masses, internal_center_of_mass_positions
 
 
-# @njit(parallel=True, fastmath=True)
-# def get_center_of_mass(masses, positions):
-#     com_mass = np.sum(masses)
+@cuda.jit('void(float32[:], float32[:, :], float32[:], float32[:, :], float32[:])')
+def cuda_get_internal_masses(masses, positions, internal_center_of_mass_masses, internal_center_of_mass_positions, distances_from_zero):
+    n = len(masses)
 
-#     com_position_x = 0.0
-#     com_position_y = 0.0
-#     com_position_z = 0.0
+    i = cuda.grid(1)
 
-#     n = len(masses)
+    if i < n:
+        for j in range(n):
+            if i != j and distances_from_zero[j] < distances_from_zero[i]:
+                internal_center_of_mass_masses[i] += masses[j]
+                internal_center_of_mass_positions[i, 0] += positions[j, 0] * masses[j]
+                internal_center_of_mass_positions[i, 1] += positions[j, 1] * masses[j]
+                internal_center_of_mass_positions[i, 2] += positions[j, 2] * masses[j]
 
-#     if com_mass != 0:
-#         for i in prange(n):
-#             com_position_x += (positions[i, 0] * masses[i]) / com_mass
-#             com_position_y += (positions[i, 1] * masses[i]) / com_mass
-#             com_position_z += (positions[i, 2] * masses[i]) / com_mass
-
-#     return com_mass, (com_position_x, com_position_y, com_position_z)
-
-@jit
-def get_center_of_mass(masses, positions):
-    com_mass = np.sum(masses)
-    com_position = np.zeros(3)
-
-    if com_mass != 0:
-        com_position = np.sum(positions * masses[:, None], axis=0) / com_mass
-
-    return com_mass, com_position
+    if internal_center_of_mass_masses[i] != 0:
+        internal_center_of_mass_positions[i, 0] /= internal_center_of_mass_masses[i]
+        internal_center_of_mass_positions[i, 1] /= internal_center_of_mass_masses[i]
+        internal_center_of_mass_positions[i, 2] /= internal_center_of_mass_masses[i]
