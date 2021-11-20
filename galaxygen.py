@@ -1,5 +1,6 @@
-from numba import cuda
 import numpy as np
+from numba import cuda
+from cudakernal import get_kernal_parameters
 
 
 def create_galaxy(n, size, G):
@@ -8,7 +9,7 @@ def create_galaxy(n, size, G):
     '''
     # Generates random masses
     # masses = abs(np.random.normal(0.5, 0.05, n))
-    masses = np.ones(n, dtype=np.float32)
+    masses = np.ones(n, dtype=np.float64)
 
     # Sets positions for points
     positions = create_positions(n, size)
@@ -39,7 +40,7 @@ def create_positions(n, size):
     points_x = points_r * np.cos(points_p)
     points_y = points_r * np.sin(points_p)
 
-    points = np.empty((n, 3), dtype=np.float32)
+    points = np.empty((n, 3), dtype=np.float64)
 
     # Adds 'noise' to all 3D to generate points
     points[:, 0] = np.random.normal(0, galaxy_spread, n) + points_x
@@ -80,27 +81,23 @@ def get_internal_masses(masses, positions):
     # Finds the radial distance for each point from the centre of the galaxy
     distances_from_zero = np.linalg.norm(positions, axis=1)
 
-    threads_per_block = 32
-    blocks_per_grid = (len(masses) + (threads_per_block - 1)) // threads_per_block
-
-    cuda_get_internal_masses[blocks_per_grid, threads_per_block](masses, positions, internal_center_of_mass_masses, internal_center_of_mass_positions, distances_from_zero)
+    cuda_get_internal_masses[get_kernal_parameters(len(masses), 2)](masses, positions, internal_center_of_mass_masses, internal_center_of_mass_positions, distances_from_zero)
 
     return internal_center_of_mass_masses, internal_center_of_mass_positions
 
 
-@cuda.jit('void(float32[:], float32[:, :], float32[:], float32[:, :], float32[:])')
+@ cuda.jit('void(float64[:], float64[:, :], float64[:], float64[:, :], float64[:])')
 def cuda_get_internal_masses(masses, positions, internal_center_of_mass_masses, internal_center_of_mass_positions, distances_from_zero):
     n = len(masses)
 
-    i = cuda.grid(1)
+    i, j = cuda.grid(2)
 
-    if i < n:
-        for j in range(n):
-            if i != j and distances_from_zero[j] < distances_from_zero[i]:
-                internal_center_of_mass_masses[i] += masses[j]
-                internal_center_of_mass_positions[i, 0] += positions[j, 0] * masses[j]
-                internal_center_of_mass_positions[i, 1] += positions[j, 1] * masses[j]
-                internal_center_of_mass_positions[i, 2] += positions[j, 2] * masses[j]
+    if i < n and j < n:
+        if i != j and distances_from_zero[j] < distances_from_zero[i]:
+            internal_center_of_mass_masses[i] += masses[j]
+            internal_center_of_mass_positions[i, 0] += positions[j, 0] * masses[j]
+            internal_center_of_mass_positions[i, 1] += positions[j, 1] * masses[j]
+            internal_center_of_mass_positions[i, 2] += positions[j, 2] * masses[j]
 
     if internal_center_of_mass_masses[i] != 0:
         internal_center_of_mass_positions[i, 0] /= internal_center_of_mass_masses[i]
