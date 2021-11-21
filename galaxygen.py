@@ -1,27 +1,19 @@
 import numpy as np
-from numba import cuda
-from cudakernal import get_kernal_parameters
+from cudagravity import get_accelerations
 
 
-def create_galaxy(n, size, G):
+def create_galaxy(n, size):
     '''
     Generates a spiral galaxy
     '''
     # Generates random masses
     # masses = abs(np.random.normal(0.5, 0.05, n))
-    masses = np.ones(n, dtype=np.float64)
 
     # Sets positions for points
     positions = create_positions(n, size)
 
-    # Finds the COM, and total mass, of all points (radially) interior to each point
-    internal_masses, internal_positions = get_internal_masses(
-        masses, positions)
-    relative_internal_positions = positions - internal_positions
-
     # Finds the initial velocity of each point
-    velocities = create_velocities(
-        relative_internal_positions, internal_masses, G)
+    velocities = initialize_velocities(positions)
 
     return velocities, positions
 
@@ -30,8 +22,6 @@ def create_positions(n, size):
     '''
     Creates galaxy particle positions
     '''
-    galaxy_spread = size / 5
-
     # Generates radial and angular components in 2D
     points_r = np.random.exponential(size, n)
     points_p = np.random.rand(n) * 2 * np.pi
@@ -40,66 +30,40 @@ def create_positions(n, size):
     points_x = points_r * np.cos(points_p)
     points_y = points_r * np.sin(points_p)
 
-    points = np.empty((n, 3), dtype=np.float64)
-
     # Adds 'noise' to all 3D to generate points
-    points[:, 0] = np.random.normal(0, galaxy_spread, n) + points_x
-    points[:, 1] = np.random.normal(0, galaxy_spread, n) + points_y
-    points[:, 2] = np.random.normal(0, galaxy_spread, n)
+    noise_magnitude = size / 5
+
+    points = np.empty((n, 3), dtype=np.float64)
+    points[:, 0] = np.random.normal(0, noise_magnitude, n) + points_x
+    points[:, 1] = np.random.normal(0, noise_magnitude, n) + points_y
+    points[:, 2] = np.random.normal(0, noise_magnitude, n)
 
     return points
 
 
-def create_velocities(relative_internal_positions, internal_masses, G):
+def initialize_velocities(positions):
     '''
     Creates point velocities
     '''
-    # Calculates the speed of particle for circular motion (considering interior mass)
-    relative_distances = np.linalg.norm(relative_internal_positions, axis=1)
-    speeds = np.sqrt((internal_masses * G) / relative_distances) * 0.7
+    # Gets initial acceleration of each point
+    initial_accelerations = get_accelerations(positions, 0)
+
+    # Calculates the speed of particle for circular motion
+    position_magnitudes = np.linalg.norm(positions, axis=1)
+    acceleration_magnitudes = np.linalg.norm(initial_accelerations, axis=1)
+    velocity_magnitudes = np.sqrt(position_magnitudes * acceleration_magnitudes)
 
     # Calculates unit vectors in 3D
-    radial_vectors = relative_internal_positions[:, 0:2]
-    vertical_vectors = np.random.normal(0, 0.1, len(relative_distances))
+    radial_vectors = initial_accelerations[:, 0:2]
+    vertical_vectors = np.random.normal(0, 0.1, len(positions))
 
-    vectors = np.zeros_like(relative_internal_positions)
-    vectors[:, 0] = - radial_vectors[:, 1]
-    vectors[:, 1] = radial_vectors[:, 0]
-    vectors[:, 2] = vertical_vectors
+    velocity_directions = np.zeros_like(positions)
+    velocity_directions[:, 0] = - radial_vectors[:, 1]
+    velocity_directions[:, 1] = radial_vectors[:, 0]
+    velocity_directions[:, 2] = vertical_vectors
 
     # Adds normalisation for correct speed (due to addition of z-component)
-    normalisation = np.linalg.norm(vectors, axis=1)
+    normalisation = np.linalg.norm(velocity_directions, axis=1)
 
     # Generates velocities
-    return speeds[:, None] * vectors / normalisation[:, None]
-
-
-def get_internal_masses(masses, positions):
-    internal_center_of_mass_positions = np.zeros_like(positions)
-    internal_center_of_mass_masses = np.zeros_like(masses)
-
-    # Finds the radial distance for each point from the centre of the galaxy
-    distances_from_zero = np.linalg.norm(positions, axis=1)
-
-    cuda_get_internal_masses[get_kernal_parameters(len(masses), 2)](masses, positions, internal_center_of_mass_masses, internal_center_of_mass_positions, distances_from_zero)
-
-    return internal_center_of_mass_masses, internal_center_of_mass_positions
-
-
-@ cuda.jit('void(float64[:], float64[:, :], float64[:], float64[:, :], float64[:])')
-def cuda_get_internal_masses(masses, positions, internal_center_of_mass_masses, internal_center_of_mass_positions, distances_from_zero):
-    n = len(masses)
-
-    i, j = cuda.grid(2)
-
-    if i < n and j < n:
-        if i != j and distances_from_zero[j] < distances_from_zero[i]:
-            internal_center_of_mass_masses[i] += masses[j]
-            internal_center_of_mass_positions[i, 0] += positions[j, 0] * masses[j]
-            internal_center_of_mass_positions[i, 1] += positions[j, 1] * masses[j]
-            internal_center_of_mass_positions[i, 2] += positions[j, 2] * masses[j]
-
-    if internal_center_of_mass_masses[i] != 0:
-        internal_center_of_mass_positions[i, 0] /= internal_center_of_mass_masses[i]
-        internal_center_of_mass_positions[i, 1] /= internal_center_of_mass_masses[i]
-        internal_center_of_mass_positions[i, 2] /= internal_center_of_mass_masses[i]
+    return velocity_magnitudes[:, None] * velocity_directions / normalisation[:, None]

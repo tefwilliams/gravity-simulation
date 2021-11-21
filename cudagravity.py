@@ -1,5 +1,23 @@
 import math
+import numpy as np
 from numba import cuda
+from cudakernal import get_kernal_parameters
+
+
+def get_accelerations(positions, sf):
+    n_particles = len(positions)
+    accelerations = np.zeros_like(positions)
+    update_acceleration[get_kernal_parameters(n_particles, 2)](positions, accelerations, sf)
+    return accelerations
+
+
+def iterate(positions, velocities, time_step, sf):
+    n_particles = len(positions)
+    accelerations = np.zeros_like(positions)
+    update_acceleration[get_kernal_parameters(n_particles, 2)](positions, accelerations, sf)
+    update_velocity[get_kernal_parameters(n_particles, 1)](velocities, accelerations, time_step)
+    update_position[get_kernal_parameters(n_particles, 1)](positions, velocities, time_step)
+    return positions
 
 
 @cuda.jit('void(float64[:, :], float64[:, :], float64)')

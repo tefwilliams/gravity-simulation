@@ -19,9 +19,10 @@ with open('points_record.csv', 'r') as csv_file:
 time_n = len(points_record)
 size = np.amax(points_record[0])
 
-fig = plt.figure()
-ax = p3.Axes3D(fig)
+fig, ax = plt.subplots(figsize=(15, 15), subplot_kw={"projection": "3d"})
+plt.tight_layout()
 
+fig.patch.set_facecolor('black')
 ax.set_facecolor('black')
 ax.grid(False)
 
@@ -32,6 +33,12 @@ ax.w_zaxis.set_pane_color((0.0, 0.0, 0.0, 0.0))
 ax.set_xlim3d([-size, size])
 ax.set_ylim3d([-size, size])
 ax.set_zlim3d([-size, size])
+
+ax.set_xticks([])
+ax.set_yticks([])
+ax.set_zticks([])
+
+ax.view_init(elev=90)
 # ax.set_aspect('equal')
 
 points = points_record[0]
@@ -46,10 +53,9 @@ def animate(frame):
 
 
 anim = animation.FuncAnimation(fig, animate, frames=time_n, interval=10)
+
+writer = animation.FFMpegWriter(fps=30, metadata={'title': f'{len(points)} particles, {len(points_record)} time steps'})
+
+anim.save('galaxy.mp4', writer=writer)
+
 plt.show()
-
-# Writer = animation.writers['ffmpeg']
-# writer = Writer(fps=15, metadata=dict(artist='Tom'), bitrate=1800)
-
-# anim.save('galaxy.mp4', writer=writer)
-# anim.save('galaxy.mp4')
