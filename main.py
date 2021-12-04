@@ -1,26 +1,24 @@
 import csv
 from time import time
 import numpy as np
-from cudagravity import iterate
+from cudagravity import update_positions
 from galaxygen import create_galaxy
 
 
 def main():
     n_particles = 10000
+    n_steps = 1000
+
     velocities, positions = create_galaxy(n_particles, 1)
 
-    n_steps = 10000
+    points_record = np.empty((n_steps, positions.size), dtype=np.float32)
+
     time_step = 10.0 ** -4
-
-    # Generate softening factor
-    # sf = 0.58 * n_particles ** (-0.26)
-    sf = 10.0 ** -3
-
-    points_record = np.empty((n_steps, n_particles * 3), dtype=np.float32)
+    softening_factor = 10.0 ** -4
 
     start = time()
     for i in range(n_steps):
-        points_record[i] = iterate(positions, velocities, time_step, sf).flatten()
+        points_record[i] = update_positions(positions, velocities, time_step, softening_factor).flatten()
     print(time() - start)
 
     with open('points_record.csv', 'w', newline="") as csv_file:
