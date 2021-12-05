@@ -3,3 +3,4 @@ __pycache__
 points_record.csv
 animations
 galaxy.mp4
+*.pyc
