@@ -5,7 +5,7 @@ from numba import cuda
 from cudakernal import get_kernal_parameters
 
 
-def update_positions(positions, velocities, time_step, softening_factor=0):
+def update_positions(positions, velocities, time_step, softening_factor=0.0):
     accelerations = get_accelerations(positions, softening_factor)
 
     velocities += accelerations * time_step
